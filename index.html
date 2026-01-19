@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Finance Dashboard</title>
+
 <style>
 :root {
   --bg:#020617; --card:#0f172a; --accent:#22c55e; --danger:#ef4444; --text:#e5e7eb; --muted:#94a3b8;
@@ -26,13 +27,28 @@ button { width:100%; padding:10px; border-radius:8px; border:none; font-weight:6
 .metric strong { font-size:20px; }
 .positive { color:var(--accent); }
 .negative { color:var(--danger); }
+#loginScreen { max-width:400px; margin:auto; padding:50px 20px; }
 @media(max-width:900px){ .container, .dashboard { grid-template-columns:1fr; } }
 </style>
+
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
 </head>
 <body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+    <h2 style="text-align:center;">Finance Dashboard Login</h2>
+    <input id="loginEmail" placeholder="Email" type="email">
+    <input id="loginPass" placeholder="Password" type="password">
+    <button onclick="login()">Login</button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboardContainer" style="display:none;">
 
 <div class="dashboard">
   <div class="card metric"><span>Total Income</span><strong id="incomeTotal">R0</strong></div>
@@ -44,6 +60,7 @@ button { width:100%; padding:10px; border-radius:8px; border:none; font-weight:6
 </div>
 
 <div class="container">
+
   <div class="card">
     <h2>Income</h2>
     <input type="number" id="incomeMain" placeholder="Main Income">
@@ -84,7 +101,10 @@ button { width:100%; padding:10px; border-radius:8px; border:none; font-weight:6
   <div class="card">
     <h2>Reset All</h2>
     <button class="clear-btn" onclick="clearAll()">Clear All</button>
+    <button class="clear-btn" onclick="logout()">Logout</button>
   </div>
+
+</div>
 </div>
 
 <script>
@@ -96,98 +116,131 @@ const firebaseConfig = {
     storageBucket: "finance-dashboard-f33ae.firebasestorage.app",
     messagingSenderId: "231545103120",
     appId: "1:231545103120:web:bdbfdb60b95e8375edbb95"
-};
+}
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const docRef = db.collection("finance").doc("user1"); // single doc for personal use
+const auth = firebase.auth();
+
+// ---- AUTH ----
+const loginScreen = document.getElementById("loginScreen");
+const dashboardContainer = document.getElementById("dashboardContainer");
+
+auth.onAuthStateChanged(user => {
+    if(user){
+        loginScreen.style.display="none";
+        dashboardContainer.style.display="grid";
+        loadData();
+    } else {
+        loginScreen.style.display="block";
+        dashboardContainer.style.display="none";
+    }
+});
+
+function login(){
+    const email = document.getElementById("loginEmail").value;
+    const password = document.getElementById("loginPass").value;
+    auth.signInWithEmailAndPassword(email,password)
+        .then(()=>console.log("Logged in!"))
+        .catch(e=>alert(e.message));
+}
+
+function logout(){
+    auth.signOut();
+}
 
 // ---- DATA ----
 let data = {income:{main:0,side:0,other:0}, fixed:[], variable:[], other:[]};
+let docRef;
 
-// Load data from Firestore
-docRef.get().then(doc => {
-  if(doc.exists){ data = doc.data(); }
-  populateInputs();
-  render();
-});
+function loadData(){
+    const user = auth.currentUser;
+    if(!user) return;
+    docRef = db.collection("finance").doc(user.uid); // user-specific doc
+    docRef.get().then(doc=>{
+        if(doc.exists){ data = doc.data(); }
+        populateInputs();
+        render();
+    });
+}
 
 function populateInputs(){
-  document.getElementById("incomeMain").value = data.income.main;
-  document.getElementById("incomeSide").value = data.income.side;
-  document.getElementById("incomeOther").value = data.income.other;
+    document.getElementById("incomeMain").value = data.income.main;
+    document.getElementById("incomeSide").value = data.income.side;
+    document.getElementById("incomeOther").value = data.income.other;
 }
 
 // ---- EXPENSES ----
 function addExpense(type){
-  let name = document.getElementById(type==="fixed"?"fixedName":type==="variable"?"varName":"otherName").value;
-  let amount = +document.getElementById(type==="fixed"?"fixedAmount":type==="variable"?"varAmount":"otherAmount").value;
-  if(!name || !amount) return;
-  data[type].push({name,amount});
-  save();
-  document.getElementById(type==="fixed"?"fixedName":type==="variable"?"varName":"otherName").value = "";
-  document.getElementById(type==="fixed"?"fixedAmount":type==="variable"?"varAmount":"otherAmount").value = "";
+    let name = document.getElementById(type==="fixed"?"fixedName":type==="variable"?"varName":"otherName").value;
+    let amount = +document.getElementById(type==="fixed"?"fixedAmount":type==="variable"?"varAmount":"otherAmount").value;
+    if(!name||!amount) return;
+    data[type].push({name,amount});
+    save();
+    document.getElementById(type==="fixed"?"fixedName":type==="variable"?"varName":"otherName").value="";
+    document.getElementById(type==="fixed"?"fixedAmount":type==="variable"?"varAmount":"otherAmount").value="";
 }
 
 // ---- SAVE ----
 function save(){
-  data.income.main = +document.getElementById("incomeMain").value || 0;
-  data.income.side = +document.getElementById("incomeSide").value || 0;
-  data.income.other = +document.getElementById("incomeOther").value || 0;
-  docRef.set(data);
-  render();
+    data.income.main = +document.getElementById("incomeMain").value || 0;
+    data.income.side = +document.getElementById("incomeSide").value || 0;
+    data.income.other = +document.getElementById("incomeOther").value || 0;
+    if(docRef) docRef.set(data);
+    render();
 }
 
-// ---- RENDER DASHBOARD ----
+// ---- RENDER ----
 function sum(arr){ return arr.reduce((a,b)=>a+b.amount,0); }
+
 function render(){
-  let totalIncome = data.income.main + data.income.side + data.income.other;
-  let fixedTotal = sum(data.fixed);
-  let varTotal = sum(data.variable);
-  let otherTotal = sum(data.other);
-  let totalExpenses = fixedTotal + varTotal + otherTotal;
-  let remaining = totalIncome - totalExpenses;
-  let all = [...data.fixed,...data.variable,...data.other];
-  let biggest = all.sort((a,b)=>b.amount-a.amount)[0];
-  let today = new Date();
-  let day = today.getDate();
-  let days = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
-  let daily = day ? totalExpenses/day : 0;
-  let forecast = totalIncome - daily*days;
+    let totalIncome = data.income.main+data.income.side+data.income.other;
+    let fixedTotal = sum(data.fixed);
+    let varTotal = sum(data.variable);
+    let otherTotal = sum(data.other);
+    let totalExpenses = fixedTotal+varTotal+otherTotal;
+    let remaining = totalIncome-totalExpenses;
+    let all = [...data.fixed,...data.variable,...data.other];
+    let biggest = all.sort((a,b)=>b.amount-a.amount)[0];
+    let today = new Date();
+    let day = today.getDate();
+    let days = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
+    let daily = day?totalExpenses/day:0;
+    let forecast = totalIncome-daily*days;
 
-  document.getElementById("incomeTotal").textContent = format(totalIncome);
-  document.getElementById("expenseTotal").textContent = format(totalExpenses);
-  document.getElementById("remainingTotal").textContent = format(remaining);
-  document.getElementById("remainingTotal").className = remaining >=0 ? "positive":"negative";
-  document.getElementById("biggest").textContent = biggest ? `${biggest.name} (${format(biggest.amount)})` : "—";
-  document.getElementById("dailyAvg").textContent = format(daily);
-  document.getElementById("forecastTotal").textContent = format(forecast);
+    document.getElementById("incomeTotal").textContent = format(totalIncome);
+    document.getElementById("expenseTotal").textContent = format(totalExpenses);
+    document.getElementById("remainingTotal").textContent = format(remaining);
+    document.getElementById("remainingTotal").className = remaining>=0?"positive":"negative";
+    document.getElementById("biggest").textContent = biggest?`${biggest.name} (${format(biggest.amount)})`:"—";
+    document.getElementById("dailyAvg").textContent = format(daily);
+    document.getElementById("forecastTotal").textContent = format(forecast);
 
-  renderList("fixed",document.getElementById("fixedList"));
-  renderList("variable",document.getElementById("varList"));
-  renderList("other",document.getElementById("otherList"));
+    renderList("fixed",document.getElementById("fixedList"));
+    renderList("variable",document.getElementById("varList"));
+    renderList("other",document.getElementById("otherList"));
 }
 
 function renderList(type,el){
-  el.innerHTML = "";
-  data[type].forEach(e=>{
-    let d = document.createElement("div");
-    d.innerHTML = `<span>${e.name}</span><span>${format(e.amount)}</span>`;
-    el.appendChild(d);
-  });
+    el.innerHTML="";
+    data[type].forEach(e=>{
+        let d=document.createElement("div");
+        d.innerHTML=`<span>${e.name}</span><span>${format(e.amount)}</span>`;
+        el.appendChild(d);
+    });
 }
 
-function format(v){ return "R " + v.toFixed(2); }
+function format(v){ return "R "+v.toFixed(2); }
 
 document.getElementById("incomeMain").addEventListener("input",save);
 document.getElementById("incomeSide").addEventListener("input",save);
 document.getElementById("incomeOther").addEventListener("input",save);
 
 function clearAll(){
-  if(!confirm("Are you sure you want to clear all data?")) return;
-  data = {income:{main:0,side:0,other:0},fixed:[],variable:[],other:[]};
-  docRef.set(data);
-  populateInputs();
-  render();
+    if(!confirm("Are you sure you want to clear all data?")) return;
+    data={income:{main:0,side:0,other:0},fixed:[],variable:[],other:[]};
+    if(docRef) docRef.set(data);
+    populateInputs();
+    render();
 }
 </script>
 
