@@ -21,13 +21,15 @@ button { width:100%; padding:10px; border-radius:8px; border:none; font-weight:6
 .row { display:grid; grid-template-columns:2fr 1fr; gap:8px; margin-bottom:8px; }
 .list { max-height:140px; overflow:auto; font-size:13px; }
 .list div { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
-.dashboard { display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:20px; }
+.dashboard { display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:20px; margin-bottom:20px; }
 .metric { text-align:center; }
 .metric span { display:block; font-size:12px; color:var(--muted); }
 .metric strong { font-size:20px; }
 .positive { color:var(--accent); }
 .negative { color:var(--danger); }
 #loginScreen { max-width:400px; margin:auto; padding:50px 20px; }
+#authForms input { margin-bottom:10px; }
+a { color:var(--accent); cursor:pointer; }
 @media(max-width:900px){ .container, .dashboard { grid-template-columns:1fr; } }
 </style>
 
@@ -39,12 +41,29 @@ button { width:100%; padding:10px; border-radius:8px; border:none; font-weight:6
 </head>
 <body>
 
-<!-- LOGIN SCREEN -->
+<!-- LOGIN / REGISTER SCREEN -->
 <div id="loginScreen">
-    <h2 style="text-align:center;">Finance Dashboard Login</h2>
-    <input id="loginEmail" placeholder="Email" type="email">
-    <input id="loginPass" placeholder="Password" type="password">
-    <button onclick="login()">Login</button>
+    <h2 style="text-align:center;">Finance Dashboard</h2>
+
+    <div id="authForms">
+
+        <!-- LOGIN FORM -->
+        <div id="loginForm">
+            <input id="loginEmail" placeholder="Email" type="email">
+            <input id="loginPass" placeholder="Password" type="password">
+            <button onclick="login()">Login</button>
+            <p>Don't have an account? <a onclick="showRegister()">Register</a></p>
+        </div>
+
+        <!-- REGISTER FORM -->
+        <div id="registerForm" style="display:none;">
+            <input id="regEmail" placeholder="Email" type="email">
+            <input id="regPass" placeholder="Password" type="password">
+            <button onclick="register()">Register</button>
+            <p>Already have an account? <a onclick="showLogin()">Login</a></p>
+        </div>
+
+    </div>
 </div>
 
 <!-- DASHBOARD -->
@@ -99,7 +118,7 @@ button { width:100%; padding:10px; border-radius:8px; border:none; font-weight:6
   </div>
 
   <div class="card">
-    <h2>Reset All</h2>
+    <h2>Reset / Logout</h2>
     <button class="clear-btn" onclick="clearAll()">Clear All</button>
     <button class="clear-btn" onclick="logout()">Logout</button>
   </div>
@@ -121,6 +140,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
+// Persist login across sessions
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
 // ---- AUTH ----
 const loginScreen = document.getElementById("loginScreen");
 const dashboardContainer = document.getElementById("dashboardContainer");
@@ -136,6 +158,16 @@ auth.onAuthStateChanged(user => {
     }
 });
 
+function showRegister() {
+    document.getElementById("loginForm").style.display = "none";
+    document.getElementById("registerForm").style.display = "block";
+}
+
+function showLogin() {
+    document.getElementById("loginForm").style.display = "block";
+    document.getElementById("registerForm").style.display = "none";
+}
+
 function login(){
     const email = document.getElementById("loginEmail").value;
     const password = document.getElementById("loginPass").value;
@@ -144,9 +176,22 @@ function login(){
         .catch(e=>alert(e.message));
 }
 
-function logout(){
-    auth.signOut();
+function register(){
+    const email = document.getElementById("regEmail").value;
+    const password = document.getElementById("regPass").value;
+    if(!email || !password){ alert("Enter email and password"); return; }
+    auth.createUserWithEmailAndPassword(email,password)
+        .then(userCredential=>{
+            alert("Account created! You are now logged in.");
+            // Initialize user's Firestore data
+            const user = userCredential.user;
+            const userDoc = db.collection("finance").doc(user.uid);
+            userDoc.set({income:{main:0,side:0,other:0}, fixed:[], variable:[], other:[]});
+        })
+        .catch(error => alert(error.message));
 }
+
+function logout(){ auth.signOut(); }
 
 // ---- DATA ----
 let data = {income:{main:0,side:0,other:0}, fixed:[], variable:[], other:[]};
@@ -155,7 +200,7 @@ let docRef;
 function loadData(){
     const user = auth.currentUser;
     if(!user) return;
-    docRef = db.collection("finance").doc(user.uid); // user-specific doc
+    docRef = db.collection("finance").doc(user.uid);
     docRef.get().then(doc=>{
         if(doc.exists){ data = doc.data(); }
         populateInputs();
